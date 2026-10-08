@@ -29,6 +29,9 @@ void gl_swap();
 
 void glCompileShader_soloader(GLuint shader);
 
+void glPixelStorei_soloader(GLenum pname, GLint param);
+void glTexImage2D_soloader(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const void *pixels);
+
 void glShaderSource_soloader(GLuint shader, GLsizei count,
                              const GLchar **string, const GLint *_length);
 

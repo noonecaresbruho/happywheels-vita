@@ -4,3 +4,13 @@ build/*
 cmake-build-*/
 lib/libc_bridge/out/
 apk/
+
+# Happy Wheels port
+build/
+build-release/
+dist/
+env.sh
+run-vita3k.sh
+run-vita3k.bat
+*.so
+assets/

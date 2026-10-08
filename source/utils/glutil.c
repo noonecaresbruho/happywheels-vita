@@ -25,11 +25,13 @@ char next_shader_fname[256];
 void load_shader(GLuint shader, const char * string, size_t length);
 
 void gl_preload() {
+#ifndef SKIP_SHACCCG_CHECK
     if (!file_exists("ur0:/data/libshacccg.suprx")
         && !file_exists("ur0:/data/external/libshacccg.suprx")) {
         fatal_error("Error: libshacccg.suprx is not installed. "
                     "Google \"ShaRKBR33D\" for quick installation.");
     }
+#endif
 
 #ifdef USE_GLSL_SHADERS
     vglSetSemanticBindingMode(VGL_MODE_POSTPONED);
@@ -37,7 +39,7 @@ void gl_preload() {
 }
 
 void gl_init() {
-    vglInitExtended(0, 960, 544, 6 * 1024 * 1024, SCE_GXM_MULTISAMPLE_4X);
+    vglInitExtended(0, 960, 544, 16 * 1024 * 1024, SCE_GXM_MULTISAMPLE_2X);
 }
 
 void gl_swap() {
@@ -248,3 +250,40 @@ void load_shader(GLuint shader, const char * string, size_t length) {
 #else
 #error "Define one of (USE_GLSL_SHADERS, USE_CG_SHADERS, USE_GXP_SHADERS)"
 #endif
+
+void glTexImage2D_soloader(GLenum target, GLint level, GLint internalformat,
+                           GLsizei width, GLsizei height, GLint border,
+                           GLenum format, GLenum type, const void *pixels) {
+    // Most of the game's sprite sheets are RGBA4444, which renders with wrong
+    // colors through vitaGL/Vita3K. Expand them to RGBA8888 before upload.
+    if (type == GL_UNSIGNED_SHORT_4_4_4_4 && format == GL_RGBA && pixels) {
+        size_t count = (size_t)width * height;
+        const uint16_t *src = (const uint16_t *)pixels;
+        uint8_t *dst = malloc(count * 4);
+        if (dst) {
+            for (size_t i = 0; i < count; i++) {
+                uint16_t p = src[i];
+                dst[i * 4 + 0] = ((p >> 12) & 0xF) * 17;
+                dst[i * 4 + 1] = ((p >> 8) & 0xF) * 17;
+                dst[i * 4 + 2] = ((p >> 4) & 0xF) * 17;
+                dst[i * 4 + 3] = (p & 0xF) * 17;
+            }
+            glTexImage2D(target, level, GL_RGBA, width, height, border, GL_RGBA, GL_UNSIGNED_BYTE, dst);
+            free(dst);
+            return;
+        }
+    }
+
+    glTexImage2D(target, level, internalformat, width, height, border, format, type, pixels);
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR)
+        l_error("glTexImage2D(%ix%i, ifmt 0x%x, fmt 0x%x, type 0x%x): error 0x%x",
+                width, height, internalformat, format, type, err);
+}
+
+void glPixelStorei_soloader(GLenum pname, GLint param) {
+    // vitaGL only knows GL_UNPACK_ROW_LENGTH; alignment is irrelevant for it
+    if (pname == GL_UNPACK_ALIGNMENT || pname == GL_PACK_ALIGNMENT)
+        return;
+    glPixelStorei(pname, param);
+}

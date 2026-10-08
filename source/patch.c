@@ -33,6 +33,8 @@ extern "C"
 #include "reimpl/sys.h"
 #include <stdbool.h>
 
+static void controls_patch(void);
+
 void __kuser_memory_barrier(void) {
 	__sync_synchronize();
 }
@@ -68,10 +70,124 @@ void kuser_patch(void) {
 
 void so_patch(void) {
 	kuser_patch();
+	controls_patch();
 	// Sample hook with symbol name
 	// hook_addr((uintptr_t)so_symbol(&so_mod, "_ZN6glitch2os7Printer5printEPKcz"), (uintptr_t)&hookedFunction);
 	// Or with offset
 	// hook_addr((uintptr_t)so_mod.text_base + 0xdeadbabe, (uintptr_t)&hookedFunction);
 	// If you use SO_CONTINUE, define a so_hook before the function and assign to it
 	// function_hook = hook_addr(...);
+}
+/*
+ * Gameplay controls
+ *
+ * GameplayControls::getState() returns the sum of getStateValue() of every
+ * on-screen button that is currently touched (one bit per button). We hook
+ * it and OR in the bits of the Vita buttons that are held.
+ */
+
+#include "reimpl/controls.h"
+
+typedef struct { float x, y; } Vec2;
+
+#define CONTROLS_BTNS_BEGIN 0x2c4 // std::vector<GameplayBtn*> in GameplayControls
+#define CONTROLS_BTNS_END   0x2c8
+#define BTN_STATE_VALUE     0x408 // GameplayBtn::stateValue
+
+#define STATE_FORWARD       0x01
+#define STATE_BACKWARD      0x02
+#define STATE_LEAN_FORWARD  0x04
+#define STATE_LEAN_BACKWARD 0x08
+#define STATE_SPECIAL       0x10
+#define STATE_EJECT         0x80
+
+static so_hook getState_hook;
+static volatile uint8_t key_state = 0;
+static volatile uint8_t stick_state = 0;
+
+static const Vec2 *(*Node_getPosition)(void *node);
+static void (*getForwardPos)(Vec2 *out, void *controls);
+static void (*getBackwardPos)(Vec2 *out, void *controls);
+static void (*getLeanForwardPos)(Vec2 *out, void *controls);
+static void (*getLeanBackwardPos)(Vec2 *out, void *controls);
+static void (*getSpecialPos)(Vec2 *out, void *controls);
+static void (*getEjectPos)(Vec2 *out, void *controls);
+
+static void dump_controls(void *controls) {
+    void **it = *(void ***)((uintptr_t)controls + CONTROLS_BTNS_BEGIN);
+    void **end = *(void ***)((uintptr_t)controls + CONTROLS_BTNS_END);
+    for (; it != end; it++) {
+        const Vec2 *p = Node_getPosition(*it);
+        l_info("[controls] btn %p value 0x%x pos %.1f,%.1f", *it,
+               *(uint32_t *)((uintptr_t)*it + BTN_STATE_VALUE), p->x, p->y);
+    }
+    Vec2 v;
+    getForwardPos(&v, controls);      l_info("[controls] forward %.1f,%.1f", v.x, v.y);
+    getBackwardPos(&v, controls);     l_info("[controls] backward %.1f,%.1f", v.x, v.y);
+    getLeanForwardPos(&v, controls);  l_info("[controls] leanForward %.1f,%.1f", v.x, v.y);
+    getLeanBackwardPos(&v, controls); l_info("[controls] leanBackward %.1f,%.1f", v.x, v.y);
+    getSpecialPos(&v, controls);      l_info("[controls] special %.1f,%.1f", v.x, v.y);
+    getEjectPos(&v, controls);        l_info("[controls] eject %.1f,%.1f", v.x, v.y);
+}
+
+uint8_t GameplayControls_getState(void *this) {
+#ifdef DEBUG_SOLOADER
+    static void *last = NULL;
+    if (this != last) {
+        last = this;
+        dump_controls(this);
+    }
+#endif
+    uint8_t state = SO_CONTINUE(uint8_t, getState_hook, this);
+#ifdef DEBUG_SOLOADER
+    static int calls = 0;
+    if (++calls % 60 == 0)
+        l_info("[controls] getState calls %i, touch 0x%x keys 0x%x stick 0x%x", calls, state, key_state, stick_state);
+#endif
+    return state | key_state | stick_state;
+}
+
+static void controls_patch(void) {
+    Node_getPosition = (void *)so_symbol(&so_mod, "_ZNK7cocos2d4Node11getPositionEv");
+    getForwardPos = (void *)so_symbol(&so_mod, "_ZN16GameplayControls13getForwardPosEv");
+    getBackwardPos = (void *)so_symbol(&so_mod, "_ZN16GameplayControls14getBackwardPosEv");
+    getLeanForwardPos = (void *)so_symbol(&so_mod, "_ZN16GameplayControls17getLeanForwardPosEv");
+    getLeanBackwardPos = (void *)so_symbol(&so_mod, "_ZN16GameplayControls18getLeanBackwardPosEv");
+    getSpecialPos = (void *)so_symbol(&so_mod, "_ZN16GameplayControls13getSpecialPosEv");
+    getEjectPos = (void *)so_symbol(&so_mod, "_ZN16GameplayControls11getEjectPosEv");
+    getState_hook = hook_addr(so_symbol(&so_mod, "_ZN16GameplayControls8getStateEv"),
+                              (uintptr_t)&GameplayControls_getState);
+}
+
+static uint8_t key_to_state(int32_t keycode) {
+    switch (keycode) {
+        case AKEYCODE_DPAD_UP:     return STATE_FORWARD;
+        case AKEYCODE_BUTTON_R1:   return STATE_FORWARD;
+        case AKEYCODE_DPAD_DOWN:   return STATE_BACKWARD;
+        case AKEYCODE_BUTTON_L1:   return STATE_BACKWARD;
+        case AKEYCODE_DPAD_RIGHT:  return STATE_LEAN_FORWARD;
+        case AKEYCODE_DPAD_LEFT:   return STATE_LEAN_BACKWARD;
+        case AKEYCODE_BUTTON_A:    return STATE_SPECIAL;   // Cross
+        case AKEYCODE_BUTTON_X:    return STATE_SPECIAL;   // Square
+        case AKEYCODE_BUTTON_Y:    return STATE_EJECT;     // Triangle
+        default:                   return 0;
+    }
+}
+
+void gameplay_key(int32_t keycode, int pressed) {
+    uint8_t bit = key_to_state(keycode);
+    if (pressed)
+        key_state |= bit;
+    else
+        key_state &= ~bit;
+}
+
+void gameplay_stick(float x, float y) {
+    const float threshold = 0.4f;
+    uint8_t s = 0;
+    if (y < -threshold) s |= STATE_FORWARD;
+    if (y > threshold)  s |= STATE_BACKWARD;
+    if (x > threshold)  s |= STATE_LEAN_FORWARD;
+    if (x < -threshold) s |= STATE_LEAN_BACKWARD;
+    stick_state = s;
 }

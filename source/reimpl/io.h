@@ -71,6 +71,15 @@ int open_soloader(const char * path, int oflag, ...);
 
 FILE * fopen_soloader(const char * filename, const char * mode);
 
+const char * path_soloader(const char * path, char * buf, size_t len);
+int mkdir_soloader(const char * path, mode_t mode);
+int access_soloader(const char * path, int amode);
+int remove_soloader(const char * path);
+int unlink_soloader(const char * path);
+int rmdir_soloader(const char * path);
+int rename_soloader(const char * oldp, const char * newp);
+long long lseek64_soloader(int fd, long long offset, int whence);
+
 DIR *opendir_soloader(char *name);
 
 int stat_soloader(const char * path, stat64_bionic * buf);

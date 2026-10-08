@@ -30,7 +30,23 @@
 // void stat_newlib_to_bionic(struct stat * src, stat64_bionic * dst);
 #include "reimpl/bits/_struct_converters.c"
 
+// The game is told its writable path is "/hw/files/" (Cocos2d-x treats
+// anything without a leading slash as a relative asset path). Map that
+// fake root back onto the real data folder here.
+#define FAKE_ROOT "/hw/"
+
+const char * path_soloader(const char * path, char * buf, size_t len) {
+    if (path && strncmp(path, FAKE_ROOT, sizeof(FAKE_ROOT) - 1) == 0) {
+        snprintf(buf, len, "%s%s", DATA_PATH, path + sizeof(FAKE_ROOT) - 1);
+        return buf;
+    }
+    return path;
+}
+
+#define REMAP(p) char p##_buf[PATH_MAX]; p = path_soloader(p, p##_buf, sizeof(p##_buf))
+
 FILE * fopen_soloader(const char * filename, const char * mode) {
+    REMAP(filename);
     if (strcmp(filename, "/proc/cpuinfo") == 0) {
         return fopen_soloader("app0:/cpuinfo", mode);
     } else if (strcmp(filename, "/proc/meminfo") == 0) {
@@ -52,6 +68,7 @@ FILE * fopen_soloader(const char * filename, const char * mode) {
 }
 
 int open_soloader(const char * path, int oflag, ...) {
+    REMAP(path);
     if (strcmp(path, "/proc/cpuinfo") == 0) {
         return open_soloader("app0:/cpuinfo", oflag);
     } else if (strcmp(path, "/proc/meminfo") == 0) {
@@ -90,6 +107,7 @@ int fstat_soloader(int fd, stat64_bionic * buf) {
 }
 
 int stat_soloader(const char * path, stat64_bionic * buf) {
+    REMAP(path);
     if (strcmp(path, "/system/lib/libOpenSLES.so") == 0) {
         l_debug("stat(%s): returning 0 in case this is a check for OpenSLES support", path);
         return 0;
@@ -123,6 +141,9 @@ int close_soloader(int fd) {
 }
 
 DIR* opendir_soloader(char* _pathname) {
+    const char * p = _pathname;
+    REMAP(p);
+    _pathname = (char *)p;
     DIR* ret = opendir(_pathname);
     l_debug("opendir(\"%s\"): %p", _pathname, ret);
     return ret;
@@ -182,4 +203,41 @@ int fsync_soloader(int fd) {
     int ret = fsync(fd);
     l_debug("fsync(%i): %i", fd, ret);
     return ret;
+}
+
+int mkdir_soloader(const char * path, mode_t mode) {
+    REMAP(path);
+    int ret = mkdir(path, mode);
+    l_debug("mkdir(%s): %i", path, ret);
+    return ret;
+}
+
+int access_soloader(const char * path, int amode) {
+    REMAP(path);
+    return access(path, amode);
+}
+
+int remove_soloader(const char * path) {
+    REMAP(path);
+    return remove(path);
+}
+
+int unlink_soloader(const char * path) {
+    REMAP(path);
+    return unlink(path);
+}
+
+int rmdir_soloader(const char * path) {
+    REMAP(path);
+    return rmdir(path);
+}
+
+int rename_soloader(const char * oldp, const char * newp) {
+    REMAP(oldp);
+    REMAP(newp);
+    return rename(oldp, newp);
+}
+
+long long lseek64_soloader(int fd, long long offset, int whence) {
+    return lseek(fd, (off_t)offset, whence);
 }

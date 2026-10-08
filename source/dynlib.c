@@ -484,7 +484,7 @@ so_default_dynlib default_dynlib[] = {
             { "ungetwc", (uintptr_t)&ungetwc },
         #endif
 
-        { "access", (uintptr_t)&access },
+        { "access", (uintptr_t)&access_soloader },
         { "basename", (uintptr_t)&basename },
         { "chdir", (uintptr_t)&chdir },
         { "chmod", (uintptr_t)&chmod },
@@ -494,9 +494,9 @@ so_default_dynlib default_dynlib[] = {
         { "ftruncate", (uintptr_t)&ftruncate },
         { "getcwd", (uintptr_t)&getcwd },
         { "lseek", (uintptr_t)&lseek },
-        { "lseek64", (uintptr_t)&ret0 }, // TODO: implement or stub with warning
+        { "lseek64", (uintptr_t)&lseek64_soloader },
         { "lstat", (uintptr_t)&lstat },
-        { "mkdir", (uintptr_t)&mkdir },
+        { "mkdir", (uintptr_t)&mkdir_soloader },
 #ifndef NDK_PORT
         { "pipe", (uintptr_t)&pipe },
         { "read", (uintptr_t)&read },
@@ -505,12 +505,12 @@ so_default_dynlib default_dynlib[] = {
         { "read", (uintptr_t)&fndk_read },
 #endif
         { "realpath", (uintptr_t)&realpath },
-        { "remove", (uintptr_t)&remove },
-        { "rename", (uintptr_t)&rename },
+        { "remove", (uintptr_t)&remove_soloader },
+        { "rename", (uintptr_t)&rename_soloader },
         { "rewind", (uintptr_t)&rewind },
-        { "rmdir", (uintptr_t)&rmdir },
+        { "rmdir", (uintptr_t)&rmdir_soloader },
         { "truncate", (uintptr_t)&truncate },
-        { "unlink", (uintptr_t)&unlink },
+        { "unlink", (uintptr_t)&unlink_soloader },
 #ifndef NDK_PORT
         { "write", (uintptr_t)&write },
 #else
@@ -739,7 +739,7 @@ so_default_dynlib default_dynlib[] = {
         { "glNormalPointer", (uintptr_t)&glNormalPointer },
         { "glOrthof", (uintptr_t)&glOrthof },
         { "glOrthox", (uintptr_t)&glOrthox },
-        { "glPixelStorei", (uintptr_t)&glPixelStorei },
+        { "glPixelStorei", (uintptr_t)&glPixelStorei_soloader },
         { "glPointParameterf", (uintptr_t)&ret0 },
         { "glPointParameterfv", (uintptr_t)&ret0 },
         { "glPointParameterx", (uintptr_t)&ret0 },
@@ -782,7 +782,7 @@ so_default_dynlib default_dynlib[] = {
         { "glTexGenivOES", (uintptr_t)&ret0 },
         { "glTexGenxOES", (uintptr_t)&ret0 },
         { "glTexGenxvOES", (uintptr_t)&ret0 },
-        { "glTexImage2D", (uintptr_t)&glTexImage2D },
+        { "glTexImage2D", (uintptr_t)&glTexImage2D_soloader },
         { "glTexParameterf", (uintptr_t)&glTexParameterf },
         { "glTexParameterfv", (uintptr_t)&ret0 },
         { "glTexParameteri", (uintptr_t)&glTexParameteri },
@@ -990,6 +990,7 @@ so_default_dynlib default_dynlib[] = {
         { "fork", (uintptr_t)&fork },
         { "getpagesize", (uintptr_t)&getpagesize },
         { "getpid", (uintptr_t)&getpid },
+        { "getauxval", (uintptr_t)&ret0 },
         { "sbrk", (uintptr_t)&sbrk },
         { "syscall", (uintptr_t)&syscall },
         { "sysconf", (uintptr_t)&ret0 },
@@ -1104,12 +1105,18 @@ so_default_dynlib default_dynlib[] = {
         { "uncompress", (uintptr_t)&uncompress },
 };
 
+extern so_module so_mod;
+
 void *dlsym_soloader(void * handle, const char * symbol) {
     for (int i = 0; i < sizeof(default_dynlib) / sizeof(default_dynlib[0]); i++) {
         if (strcmp(symbol, default_dynlib[i].symbol) == 0) {
-            return &default_dynlib[i].func;
+            return (void *)default_dynlib[i].func;
         }
     }
+
+    uintptr_t own = so_symbol(&so_mod, symbol);
+    if (own)
+        return (void *)own;
 
     l_error("dlsym: Unknown symbol \"%s\".", symbol);
     return NULL;

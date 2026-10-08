@@ -6,14 +6,14 @@ endif ()
 
 set(CMAKE_TOOLCHAIN_FILE "$ENV{VITASDK}/share/vita.toolchain.cmake" CACHE PATH "Toolchain file")
 
-project(so_loader C CXX)
+project(happywheels C CXX)
 
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 # Vita application configuration
-set(VITA_APP_NAME "so-loader")
-set(VITA_TITLEID "SLDR00000")
-set(VITA_VPKNAME "so_loader")
+set(VITA_APP_NAME "Happy Wheels")
+set(VITA_TITLEID "HPWH00001")
+set(VITA_VPKNAME "happywheels")
 set(VITA_VERSION "01.00")
 set(VITA_MKSFOEX_FLAGS "-d ATTRIBUTE2=12")
 
@@ -22,8 +22,8 @@ set(PSVITAIP "192.168.0.198" CACHE STRING "PSVita IP (for FTP access)")
 set(PARSECOREPATH "$ENV{PARSECOREPATH}" CACHE STRING "vita-parse-core main.py")
 
 # Game-specific definitions
-set(DATA_PATH "ux0:data/gamename/") # Path to data (with trailing /)
-set(SO_PATH "${DATA_PATH}main.so") # Path to .so
+set(DATA_PATH "ux0:data/happywheels/") # Path to data (with trailing /)
+set(SO_PATH "${DATA_PATH}libMyGame.so") # Path to .so
 add_definitions(-DDATA_PATH="${DATA_PATH}" -DSO_PATH="${SO_PATH}")
 
 # Port type
@@ -73,10 +73,10 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
   #add_definitions(-DDEBUG_PIPEFD=1)
   #add_definitions(-DDEBUG_CALLBACKS=1)
   # Space-separated flags passed to vitaGL
-  set(VITAGL_MAKE_FLAGS "SOFTFP_ABI=1 TEST=1 LOG_ERRORS=1")
+  set(VITAGL_MAKE_FLAGS "SOFTFP_ABI=1 LOG_ERRORS=1 HAVE_VITA3K_SUPPORT=1")
 else()
   # Space-separated flags passed to vitaGL
-  set(VITAGL_MAKE_FLAGS "SOFTFP_ABI=1 NO_DEBUG=1")
+  set(VITAGL_MAKE_FLAGS "SOFTFP_ABI=1 NO_DEBUG=1 HAVE_VITA3K_SUPPORT=1")
 endif()
 
 # makes sincos, sincosf, etc. visible
